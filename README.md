@@ -8,6 +8,14 @@ At its core, PersonalizedGP applies the following formula to data points to obse
 
 <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\lambda" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\lambda" title="\lambda" /></a> is the variance parameter, and <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\sigma" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\sigma" title="\sigma" /></a> is the lengthscales parameter. 
 
+## Citation 
+
+If you use this code or these benchmarks in your research, **please cite the following publication**: 
+
+Yuria Utsumi, Ognjen Rudovic, Kelly Peterson, Ricardo Guerrero, and Rosalind Picard. Personalized Gaussian Processes for Forecasting of Alzheimer's Disease Assessment Scale-Cognition Sub-Scale (ADAS-Cog13). 
+
+Available via [arXiv](https://arxiv.org/abs/1802.08561).
+
 ## GP Models 
 
 PersonalizedGP outputs predictions from three models. 
