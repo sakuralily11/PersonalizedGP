@@ -10,7 +10,7 @@ At its core, PersonalizedGP applies the following formula to data points to obse
 
 ## Citation 
 
-If you use this code or these benchmarks in your research, **please cite the following publication**: 
+If you use this code in your research, **please cite the following publication**: 
 
 Yuria Utsumi, Ognjen Rudovic, Kelly Peterson, Ricardo Guerrero, and Rosalind Picard. Personalized Gaussian Processes for Forecasting of Alzheimer's Disease Assessment Scale-Cognition Sub-Scale (ADAS-Cog13). 
 
