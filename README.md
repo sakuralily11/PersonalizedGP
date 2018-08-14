@@ -4,7 +4,7 @@ PersonalizedGP is a package for building personalized Gaussian process (GP) mode
 
 This package uses a modified radial basis function kernel as the learning algorithm. 
 
-At its core, PersonalizedGP applies the following formula to data points to observe their similarities: <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\lambda&space;e^{\frac{(x-x')^2}{2\sigma&space;}}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\lambda&space;e^{\frac{(x-x')^2}{2\sigma&space;}}" title="\lambda e^{\frac{(x-x')^2}{2\sigma }}" /></a>
+At its core, PersonalizedGP applies the following formula to data points to observe their similarities: <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\lambda&space;e^{\frac{-(x-x')^2}{2\sigma&space;}}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\lambda&space;e^{\frac{(x-x')^2}{2\sigma&space;}}" title="\lambda e^{\frac{(x-x')^2}{2\sigma }}" /></a>
 
 <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\lambda" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\lambda" title="\lambda" /></a> is the variance parameter, and <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\sigma" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\sigma" title="\sigma" /></a> is the lengthscales parameter. 
 
