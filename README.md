@@ -10,15 +10,19 @@ At its core, PersonalizedGP applies the following formula to data points to obse
 
 ## Citation 
 
-If you use this code in your research, **please cite the following publication**: 
+If you use this code in your research, **please cite the following publications**: 
 
-Yuria Utsumi, Ognjen Rudovic, Kelly Peterson, Ricardo Guerrero, and Rosalind Picard. Personalized Gaussian Processes for Forecasting of Alzheimer's Disease Assessment Scale-Cognition Sub-Scale (ADAS-Cog13). 
+Utsumi, Y., Rudovic, O., Peterson, K., Guerrero, R., Picard, R. "Personalized Gaussian Processes for Forecasting of Alzheimer's Disease Assessment Scale-Cognition Sub-Scale (ADAS-Cog13)." The 40th International Conference of the IEEE Engineering in Medicine and Biology Society (EMBC). May 2018.
 
 Available via [arXiv](https://arxiv.org/abs/1802.08561).
 
+Peterson, K., Rudovic, O., Guerrero, R., Picard, R. "Personalized Gaussian Processes for Future Prediction of Alzheimer's Disease Progression," NIPS Workshop on Machine Learning for Healthcare, Long Beach, CA, December 2017.
+
+Available via [arXiv](https://arxiv.org/abs/1712.00181). 
+
 ## GP Models 
 
-PersonalizedGP outputs predictions from three models. 
+PersonalizedGP outputs predictions from three models. Reference [this](https://arxiv.org/abs/1802.08561) paper for corresponding equations. 
 
 ### Source Model (sGP) 
 
@@ -46,95 +50,47 @@ pGP+tGP computes the geometric mean of the results outputted by pGP and tGP. Thi
 
 PersonalizedGP allows for prediction of mean and variance based on source, target, and personalized models upon building, training, and optimization of a source model with GPflow. Both the input feature vector and output labels can be multi-dimensional. 
 
-For example, mean and variance predictions can be made from source, target, personalized, and joint models in a few lines of code:
+For example, a simple personalized Gaussian process model can be built, compiled, and trained in just a few lines of code: 
 
 ```
-from call_pgp import * 
-from evaluation_metrics import * 
+from data.data_generator import * 
+from utils import process_data
+from GP import personalizedGP 
 
-import gpflow
 import numpy as np 
+import os 
+import gpflow
 
-#generate random X and Y values 
-X = np.random.uniform(low = 0, high = 1, size = (1000, 4)) 
-Y = np.random.uniform(low = 0, high = 1, size = (1000, 1))
+# Generate and process data 
+generate_demo_data()
 
-#generate list of training and adaptation data indices 
-tr_ind_source = list(range(0, 800))
-adapt_ind = list(range(800, 1000))
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'data/ts_demo_data.csv')
 
+data = np.genfromtxt(DATA_CSV_DIR, delimiter=',')
+IDs, X, Y, indicators = data[:, :1], data[:, 1:-8], data[:, -8:-4], data[:, -4:]
+unique_IDs = np.unique(list(map(lambda x:int(x[0]), IDs)))
 
-#extract source features and labels 
-x_s = X[[tr_ind_source]]
-y_s = Y[[tr_ind_source]]
+for i in range(10):
+    te_IDs = [unique_IDs[i]]
+    tr_IDs = np.setdiff1d(unique_IDs, te_IDs)
 
-#extract adaptation data 
-x_a = X[[adapt_ind]][:-1, :]
-y_a = Y[[adapt_ind]][:-1, :]
+    X_tr, Y_tr, X_te, Y_te, ind_te, ID_te = process_data(X, Y, indicators, IDs, tr_IDs, te_IDs)
 
-#extract test data
-xtest = X[[adapt_ind]]
-ytest = Y[[adapt_ind]]
+    # Create RBF kernel and GP model instance 
+    k = gpflow.kernels.RBF(input_dim=X_tr.shape[1])
+    pGP = personalizedGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k)
 
-#create RBF kernel 
-d = np.shape(X)[1]
-k = gpflow.kernels.RBF(d)
+    # Predict on test patient 
+    for te in te_IDs: 
+        te_rows = np.where(ID_te == te)[0] 
 
-#TRAINING AND PREDICTING SOURCE MODEL 
+        X_ad_patient = X_te[te_rows][:-1, :]
+        Y_ad_patient = Y_te[te_rows][:-1, :]
+        X_te_patient = X_te[te_rows]
 
-#create GP model m with x_s, y_s variables and kernel k 
-m = gpflow.models.GPR(x_s, y_s, kern = k)
+        m_ad_patient, s_ad_patient = pGP.predict(X_ad=X_ad_patient, Y_ad=Y_ad_patient, X_te=X_te_patient)
 
-#initialize hyperparameters 
-m.likelihood.variance = np.exp(2*np.log(np.sqrt(0.1*np.var(y_s))))
-max_x = np.amax(x_s, axis=0)
-min_x = np.amin(x_s, axis=0)
-m.kern.lengthscales = np.array(np.median(max_x - min_x))
-m.kern.variance = np.var(y_s)
-
-#optimize model 
-m.compile()
-opt = gpflow.train.ScipyOptimizer()
-opt.minimize(m)
-
-#call personalized GP method 
-out = call_pgp(m, x_s, y_s, x_a, y_a, xtest, k)
-
-g_t = ytest
-
-m_s = out['source model mu']
-m_a = out['adapted model mu']
-m_t = out['target model mu']
-m_j = out['joint model mu']
-
-s_s = out['source model sigma']
-s_a = out['adapted model sigma']
-s_t = out['target model sigma']
-s_j = out['joint model sigma']
-
-#error - source model 
-e_s = calcMAE(g_t, m_s)
-w_s = calcWES(g_t, m_s, s_s)
-print('SOURCE MODEL - MEAN ABSOLUTE ERROR:', e_s)
-print('SOURCE MODEL - WEIGHTED ERROR SCORE:', w_s)
-
-#error - adaptation model 
-e_a = calcMAE(g_t, m_a)
-w_a = calcWES(g_t, m_a, s_a)
-print('ADAPTATION MODEL - MEAN ABSOLUTE ERROR:', e_a)
-print('ADAPTATION MODEL - WEIGHTED ERROR SCORE:', w_a)
-
-#error - target model 
-e_t = calcMAE(g_t, m_t)
-w_t = calcWES(g_t, m_t, s_t)
-print('TARGET MODEL - MEAN ABSOLUTE ERROR:', e_t)
-print('TARGET MODEL - WEIGHTED ERROR SCORE:', w_t)
-
-#error - joint model 
-e_j = calcMAE(g_t, m_j)
-w_j = calcWES(g_t, m_j, s_j)
-print('JOINT MODEL - MEAN ABSOLUTE ERROR:', e_j)
-print('JOINT MODEL - WEIGHTED ERROR SCORE:', w_j)
 ```
 
 ### Installation 
