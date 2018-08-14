@@ -1,92 +1,107 @@
+# Personalized Gaussian Process - DEMO 
 
-
-##########################################
-## Personalized Gaussian Process - DEMO ## 
-##########################################
-
-import numpy as np
+import os 
 import gpflow 
+import numpy as np
 
-from call_pgp import *
+from GP import *
 from evaluation_metrics import *
 
-X = np.random.uniform(low = 0.0, high = 1.0, size = (1000, 10))
-Y = np.random.uniform(low = 5.0, high = 10.0, size = (1000, 3))
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'ts_demo_data.csv')
+# DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'adni_adas13_100_fl1_l4.csv')
 
-tr_ind_source = list(range(0, 800))
-adapt_ind = list(range(800, 1000))
+data = np.genfromtxt(DATA_CSV_DIR, delimiter=',')
 
-#extract source features and labels 
-#step may vary if dealing with multiple patient data 
-x_s = X[[tr_ind_source]]
-y_s = Y[[tr_ind_source]]
+IDs = data[:, :1]
+X = data[:, 1:-8]
+Y = data[:, -8:-4]
+indicators = data[:, -4:]
 
-#extract all adaptation data 
-x_a = X[[adapt_ind]][:-1, :]
-y_a = Y[[adapt_ind]][:-1, :]
+unique_IDs = np.unique(list(map(lambda x:int(x[0]), IDs)))
 
-#extract test data
-xtest = X[[adapt_ind]]
-ytest = Y[[adapt_ind]]
+# Loop for 10 folds: 
+mean = {'sGP': None, 'pGP': None, 'tGP': None, 'joint': None} 
+variance = {'sGP': None, 'pGP': None, 'tGP': None, 'joint': None}
+for i in range(10):
+    te_IDs = [unique_IDs[i]]
+    # te_IDs = IDs[i*10:i*10+10]
+    tr_IDs = np.setdiff1d(unique_IDs, te_IDs)
 
-#creating RBF kernel 
-d = np.shape(X)[1]
-k = gpflow.kernels.RBF(d)
+    X_tr, Y_tr = None, None 
+    for tr in tr_IDs:
+        tr_rows = np.where(IDs == tr)[0]
 
-#TRAINING AND PREDICTING SOURCE MODEL 
-#creating gp model m with x_s, y_s variables and kernel k 
-m = gpflow.models.GPR(x_s, y_s, kern = k)
-#initialize hyperparameters 
-m.likelihood.variance = np.exp(2*np.log(np.sqrt(0.1*np.var(y_s))))
-max_x = np.amax(x_s, axis=0)
-min_x = np.amin(x_s, axis=0)
-m.kern.lengthscales = np.array(np.median(max_x - min_x))
-m.kern.variance = np.var(y_s)
-#optimizing model 
-m.compile()
-opt = gpflow.train.ScipyOptimizer()
-opt.minimize(m)
+        X_tr = X[tr_rows, :] if X_tr is None else np.vstack((X_tr, X[tr_rows, :]))
+        Y_tr = Y[tr_rows, :] if Y_tr is None else np.vstack((Y_tr, Y[tr_rows, :]))
 
-############################################################################
-#Stores output, specify key to retrieve values, i.e. out['source model mu']#
-############################################################################
+    X_te, Y_te, ind_te, ID_te = None, None, None, None 
+    for te in te_IDs:
+        te_rows = np.where(IDs == te)[0]
 
-#out.keys() = dict_keys(['source model mu', 'source model sigma', 'adapted model mu', 'adapted model sigma', 'target model mu', 'target model sigma', 'param - kernel ls', 'param - kernel var', 'param - likelihood var'])
+        X_te = X[te_rows, :] if X_te is None else np.vstack((X_te, X[te_rows, :]))
+        Y_te = Y[te_rows, :] if Y_te is None else np.vstack((Y_te, Y[te_rows, :]))
+        ind_te = indicators[te_rows, :] if ind_te is None else np.vstack((ind_te, indicators[te_rows, :]))
+        ID_te = IDs[te_rows, :] if ID_te is None else np.vstack((ID_te, IDs[te_rows, :]))
 
-out = call_pgp(m, x_s, y_s, x_a, y_a, xtest, k)
+    ## Source GP 
+    # Create RBF kernel and GP model instance 
+    k = gpflow.kernels.RBF(input_dim=X_tr.shape[1])
+    sGP = gpflow.models.GPR(X_tr, Y_tr, kern = k)
+    # Initialize hyperparameters 
+    sGP.likelihood.variance = np.exp(2*np.log(np.sqrt(0.1*np.var(Y_tr))))
+    sGP.kern.lengthscales = np.array([np.median(np.amax(X_tr, axis=0)-np.amin(X_tr, axis=0))])[0]
+    sGP.kern.variance = np.var(Y_tr)
+    # Optimize model 
+    sGP.compile()
+    opt = gpflow.train.ScipyOptimizer()
+    opt.minimize(sGP, maxiter=30)
+    # Predict 
+    m_s, s_s = sGP.predict_y(X_te)
 
-g_t = ytest
+    ## Personalized GP & Target GP 
+    # Create personalizedGP & targetGP instance 
+    pGP = personalizedGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k, GP=sGP)
+    tGP = targetGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k, GP=sGP)
+    # Train and predict  
+    m_ad, s_ad = None, None 
+    m_t, s_t = None, None 
+    for te in te_IDs: 
+        te_rows = np.where(ID_te == te)[0] 
 
-m_s = out['source model mu']
-m_a = out['adapted model mu']
-m_t = out['target model mu']
-m_j = out['joint model mu']
+        X_ad_patient = X_te[te_rows][:-1, :]
+        Y_ad_patient = Y_te[te_rows][:-1, :]
+        X_te_patient = X_te[te_rows]
 
-s_s = out['source model sigma']
-s_a = out['adapted model sigma']
-s_t = out['target model sigma']
-s_j = out['joint model sigma']
+        sGP_patient_predictions = sGP.predict_y(X_te_patient)
 
-#error - source model 
-e_s = calcMAE(g_t, m_s)
-w_s = calcWES(g_t, m_s, s_s)
-print('SOURCE MODEL - MEAN ABSOLUTE ERROR:', e_s)
-print('SOURCE MODEL - WEIGHTED ERROR SCORE:', w_s)
+        m_ad_patient, s_ad_patient = pGP.predict(X_ad=X_ad_patient, Y_ad=Y_ad_patient, X_te=X_te_patient, sGP_predictions=sGP_patient_predictions)
+        m_t_patient, s_t_patient = tGP.predict(X_t=X_ad_patient, Y_t=Y_ad_patient, X_te=X_te_patient, sGP_predictions=sGP_patient_predictions)
 
-#error - adaptation model 
-e_a = calcMAE(g_t, m_a)
-w_a = calcWES(g_t, m_a, s_a)
-print('ADAPTATION MODEL - MEAN ABSOLUTE ERROR:', e_a)
-print('ADAPTATION MODEL - WEIGHTED ERROR SCORE:', w_a)
+        m_ad = m_ad_patient if m_ad is None else np.vstack((m_ad, m_ad_patient))
+        s_ad = s_ad_patient if s_ad is None else np.vstack((s_ad, s_ad_patient))
 
-#error - target model 
-e_t = calcMAE(g_t, m_t)
-w_t = calcWES(g_t, m_t, s_t)
-print('TARGET MODEL - MEAN ABSOLUTE ERROR:', e_t)
-print('TARGET MODEL - WEIGHTED ERROR SCORE:', w_t)
+        m_t = m_t_patient if m_t is None else np.vstack((m_t, m_t_patient))
+        s_t = s_t_patient if s_t is None else np.vstack((s_t, s_t_patient))
 
-#error - joint model 
-e_j = calcMAE(g_t, m_j)
-w_j = calcWES(g_t, m_j, s_j)
-print('JOINT MODEL - MEAN ABSOLUTE ERROR:', e_j)
-print('JOINT MODEL - WEIGHTED ERROR SCORE:', w_j)
+    ## Joint GP 
+    m_j = (m_ad + m_t)/2
+    s_j = (s_ad + s_t)/4
+
+    mean['sGP'] = m_s if mean['sGP'] is None else np.vstack((mean['sGP'], m_s))
+    mean['pGP'] = m_ad if mean['pGP'] is None else np.vstack((mean['pGP'], m_ad))
+    mean['tGP'] = m_t if mean['tGP'] is None else np.vstack((mean['tGP'], m_t))
+    mean['joint'] = m_j if mean['joint'] is None else np.vstack((mean['joint'], m_j))
+
+    variance['sGP'] = s_s if variance['sGP'] is None else np.vstack((variance['sGP'], s_s))
+    variance['pGP'] = s_ad if variance['pGP'] is None else np.vstack((variance['pGP'], s_ad))
+    variance['tGP'] = s_t if variance['tGP'] is None else np.vstack((variance['tGP'], s_t))
+    variance['joint'] = s_j if variance['joint'] is None else np.vstack((variance['joint'], s_j))
+
+print('sGP:', np.mean(np.abs(mean['sGP'] - Y), axis=0))
+print('pGP:', np.mean(np.abs(mean['pGP'] - Y), axis=0))
+print('tGP:', np.mean(np.abs(mean['tGP'] - Y), axis=0))
+print('jointGP:', np.mean(np.abs(mean['joint'] - Y), axis=0))
+
+# Save results 
+RESULTS_FOLDER_DIR = os.path.join(CURRENT_DIR, 'Results')
