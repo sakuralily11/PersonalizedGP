@@ -45,3 +45,6 @@ def ts_formatter(DATA_DIR, DATA_TS_DIR, t):
         data_ts = patient_data_ts if data_ts is None else np.vstack((data_ts, patient_data_ts))
 
     np.savetxt(DATA_TS_DIR, data_ts, delimiter=',')
+
+if __name__ == '__main__':
+    pass
