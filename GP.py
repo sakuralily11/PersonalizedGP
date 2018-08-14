@@ -174,3 +174,6 @@ class targetGP(baseGP):
             s_target = np.vstack((s_target, s_target_ele[0]))
 
         return m_target, s_target
+
+if __name__ == '__main__':
+    pass

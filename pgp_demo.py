@@ -1,6 +1,7 @@
 # Personalized Gaussian Process - DEMO 
 
 import os 
+import pathlib
 import gpflow 
 import numpy as np
 
@@ -8,8 +9,7 @@ from GP import *
 from evaluation_metrics import *
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'ts_demo_data.csv')
-# DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'adni_adas13_100_fl1_l4.csv')
+DATA_CSV_DIR = os.path.join(CURRENT_DIR, 'data/ts_demo_data.csv')
 
 data = np.genfromtxt(DATA_CSV_DIR, delimiter=',')
 
@@ -21,28 +21,13 @@ indicators = data[:, -4:]
 unique_IDs = np.unique(list(map(lambda x:int(x[0]), IDs)))
 
 # Loop for 10 folds: 
-mean = {'sGP': None, 'pGP': None, 'tGP': None, 'joint': None} 
-variance = {'sGP': None, 'pGP': None, 'tGP': None, 'joint': None}
+mean = dict(zip(['sGP', 'pGP', 'tGP', 'joint'], [None, None, None, None]))
+variance = dict(zip(['sGP', 'pGP', 'tGP', 'joint'], [None, None, None, None]))
 for i in range(10):
     te_IDs = [unique_IDs[i]]
-    # te_IDs = IDs[i*10:i*10+10]
     tr_IDs = np.setdiff1d(unique_IDs, te_IDs)
 
-    X_tr, Y_tr = None, None 
-    for tr in tr_IDs:
-        tr_rows = np.where(IDs == tr)[0]
-
-        X_tr = X[tr_rows, :] if X_tr is None else np.vstack((X_tr, X[tr_rows, :]))
-        Y_tr = Y[tr_rows, :] if Y_tr is None else np.vstack((Y_tr, Y[tr_rows, :]))
-
-    X_te, Y_te, ind_te, ID_te = None, None, None, None 
-    for te in te_IDs:
-        te_rows = np.where(IDs == te)[0]
-
-        X_te = X[te_rows, :] if X_te is None else np.vstack((X_te, X[te_rows, :]))
-        Y_te = Y[te_rows, :] if Y_te is None else np.vstack((Y_te, Y[te_rows, :]))
-        ind_te = indicators[te_rows, :] if ind_te is None else np.vstack((ind_te, indicators[te_rows, :]))
-        ID_te = IDs[te_rows, :] if ID_te is None else np.vstack((ID_te, IDs[te_rows, :]))
+    X_tr, Y_tr, X_te, Y_te, ind_te, ID_te = process_data(X, Y, indicators, IDs, tr_IDs, te_IDs)
 
     ## Source GP 
     # Create RBF kernel and GP model instance 
@@ -93,15 +78,15 @@ for i in range(10):
     mean['tGP'] = m_t if mean['tGP'] is None else np.vstack((mean['tGP'], m_t))
     mean['joint'] = m_j if mean['joint'] is None else np.vstack((mean['joint'], m_j))
 
-    variance['sGP'] = s_s if variance['sGP'] is None else np.vstack((variance['sGP'], s_s))
+    variance['sGP'] = s_s[:,0:1] if variance['sGP'] is None else np.vstack((variance['sGP'], s_s[:,0:1]))
     variance['pGP'] = s_ad if variance['pGP'] is None else np.vstack((variance['pGP'], s_ad))
     variance['tGP'] = s_t if variance['tGP'] is None else np.vstack((variance['tGP'], s_t))
     variance['joint'] = s_j if variance['joint'] is None else np.vstack((variance['joint'], s_j))
 
-print('sGP:', np.mean(np.abs(mean['sGP'] - Y), axis=0))
-print('pGP:', np.mean(np.abs(mean['pGP'] - Y), axis=0))
-print('tGP:', np.mean(np.abs(mean['tGP'] - Y), axis=0))
-print('jointGP:', np.mean(np.abs(mean['joint'] - Y), axis=0))
-
 # Save results 
-RESULTS_FOLDER_DIR = os.path.join(CURRENT_DIR, 'Results')
+RESULTS_FOLDER_DIR = os.path.join(CURRENT_DIR, 'results')
+pathlib.Path(RESULTS_FOLDER_DIR).mkdir(parents=True, exist_ok=True)
+RESULTS_CSV_DIR = os.path.join(RESULTS_FOLDER_DIR, 'results.csv')
+MAE_METRICS_CSV_DIR = os.path.join(RESULTS_FOLDER_DIR, 'mae_metrics.csv')
+WES_METRICS_CSV_DIR = os.path.join(RESULTS_FOLDER_DIR, 'wes_metrics.csv')
+save_results(mean, variance, Y, IDs, indicators, RESULTS_CSV_DIR, MAE_METRICS_CSV_DIR, WES_METRICS_CSV_DIR)
