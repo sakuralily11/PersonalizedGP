@@ -113,7 +113,16 @@ To demo, run the ```pgp_demo.py``` script.
 
 ## Running Tests 
 
-To use PersonalizedGP, save training data as a CSV file with input data in the first n columns and label in the last column. The data extraction code in ```pgp_demo.py``` may be used to extract CSV data as numpy arrays. 
+To use PersonalizedGP, format and process data using our helper functions. 
+
+### Data Format 
+
+Data should be in a CSV file and formatted with columns as follows: unique patient ID, features, label (corresponding to same visit as features), and indicator (1 – true label, 0 – missing label). Each patient data should be in chronological order, with earliest visits at the top. 
+To reformat the data for predicting T time steps ahead, given the previous visit label, pass the file through ```ts_formatter```, which can be imported from ```data.ts_formatter```. 
+
+### Data Processing 
+
+Data can be processed into training and testing data using our ```process_data``` function, which can be imported from ```utils```. 
 
 ## Citations 
 
