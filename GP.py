@@ -7,17 +7,19 @@ import logging
 import gpflow 
 import numpy as np
 import scipy.linalg as linalg
+import tensorflow as tf
 
-class baseGP(gpflow.models.GPR):
-    def __init__(self, X_tr, Y_tr, kernel, GP=None, **kwargs):
-        super().__init__(X_tr, Y_tr, kern=kernel)
+class baseGP(object):
+    def __init__(self, X, Y, kernel):
+        self.X = X
+        self.Y = Y 
+        self.kernel = kernel 
 
-        self.X_tr = X_tr 
-        self.Y_tr = Y_tr
-
-        if GP is None: 
+    def train(self, X_tr, Y_tr, sGP=None, **kwargs): 
+        """ Trains source GP if not provided """ 
+        if sGP is None: 
         # Build sGP model 
-            self.sourceGP = gpflow.models.GPR(X_tr, Y_tr, kern=kernel)
+            self.sourceGP = gpflow.models.GPR(X_tr, Y_tr, kern=self.kernel)
             self.sourceGP.likelihood.variance = np.exp(2*np.log(np.sqrt(0.1*np.var(Y_tr))))
             max_x = np.amax(X_tr, axis=0)
             min_x = np.amin(X_tr, axis=0)
@@ -29,13 +31,15 @@ class baseGP(gpflow.models.GPR):
             opt = gpflow.train.ScipyOptimizer()
             opt.minimize(self.sourceGP)
         else:
-            self.sourceGP = GP 
+            self.sourceGP = sGP 
 
         # Store parameters 
         pathname = '/'.join(list(self.sourceGP.read_trainables().keys())[0].split('/')[:-2])
         self.ls = self.sourceGP.read_values()['{}/kern/lengthscales'.format(pathname)]
         self.var = self.sourceGP.read_values()['{}/kern/variance'.format(pathname)]
         self.lik = float(self.sourceGP.likelihood.variance.value)
+
+        return None 
         
     def __square_dist(self, X1, X2):
         X1 = X1 / self.ls 
@@ -63,15 +67,52 @@ class baseGP(gpflow.models.GPR):
         K-diagonal Function 
         Return: tensor with just the variances along 0th dimension of X 
         """
-        return np.full((1, X1.shape[0]), float(self.var))
+        return np.full((1, X1.shape[0]), float(self.var))        
 
 class personalizedGP(baseGP):
-    def __init__(self, X_tr, Y_tr, kernel, GP=None, **kwargs):
-        super().__init__(X_tr, Y_tr, kernel=kernel, GP=GP)
+    def __init__(self, X, Y, kernel, sGP=None, **kwargs):
+        super().__init__(X, Y, kernel)
 
-    def predict(self, X_ad, Y_ad, X_te, sGP_predictions=None, **kwargs):
-        """ Trains and predicts on personalizedGP """ 
+        self.sGP = sGP 
 
+    def train(self, X_tr, Y_tr, X_ad, Y_ad, new_patient=True, **kwargs): 
+        """ 
+        Trains personalizedGP 
+
+        PARAMETERS
+        X_tr: array of training data features 
+        Y_tr: array of training data labels 
+        X_ad: array of adaptation data features 
+        Y_ad: array of adaptation data labels 
+        """
+        baseGP.train(self, X_tr, Y_tr, self.sGP) # trains sGP if necessary 
+
+        self.X_tr = X_tr if new_patient else np.vstack((self.X_tr, X_tr))
+        self.Y_tr = Y_tr if new_patient else np.vstack((self.Y_tr, Y_tr))
+
+        self.X_ad = X_ad if new_patient else np.vstack((self.X_ad, X_ad))
+        self.Y_ad = Y_ad if new_patient else np.vstack((self.Y_ad, Y_ad)) 
+
+        self.K_tt_all = self._baseGP__K(self.X_ad)
+        
+        K_s = self._baseGP__K(self.X_tr)
+        L_arg = K_s + self.lik*np.identity(K_s.shape[0]) 
+        self.L = jitChol(L_arg) 
+
+        alpha_denom = np.linalg.lstsq(self.L, self.Y_tr, rcond=None)[0]
+        self.alpha = np.linalg.lstsq(self.L.transpose(),alpha_denom, rcond=None)[0]
+
+        return None 
+
+    def predict(self, X_te, sGP_predictions=None, v1=1, **kwargs):
+        """ 
+        Predicts on personalizedGP 
+        
+        PARAMETERS 
+        X_te: array of testing data features 
+        sGP_predictions: tuple of sGP mean and variance predictions 
+        v1: int indicating visit to start predicting from 
+        """ 
         if sGP_predictions is None: 
             m_s, s_s = self.sourceGP.predict_y(X_te)
         else:
@@ -80,31 +121,24 @@ class personalizedGP(baseGP):
         m_adapt, s_adapt = None, None
         
         K_ts_star_all = self._baseGP__K(self.X_tr, X_te)
-        K_tt_all = self._baseGP__K(X_ad)
-        K_t_star_all = self._baseGP__K(X_ad, X_te)
-        
-        K_s = self._baseGP__K(self.X_tr)
-        L_arg = K_s + self.lik*np.identity(K_s.shape[0]) 
-        L = jitChol(L_arg) 
+        K_t_star_all = self._baseGP__K(self.X_ad, X_te)
 
-        alpha_denom = np.linalg.lstsq(L, self.Y_tr, rcond=None)[0]
-        alpha = np.linalg.lstsq(L.transpose(),alpha_denom, rcond=None)[0]
-
-        for i in range(1, len(X_ad)+1): 
+        start = v1 if v1 == 1 else v1-1 
+        for i in range(start, len(self.X_ad)+1): 
 
             if i == 1:
                 m_adapt = m_s[0:1, :]
                 s_adapt = s_s[0:1, 0:1]
             
-            y_a_patient = Y_ad[0:i] # adaptation data for subject
+            y_a_patient = self.Y_ad[0:i] # adaptation data for subject
 
             # K_ts, K_tt
             K_ts = K_ts_star_all[:,:i]
-            K_tt = K_tt_all[:i,:i]
+            K_tt = self.K_tt_all[:i,:i]
 
             # alpha_adapt
-            V = np.linalg.lstsq(L, K_ts, rcond=None)[0]
-            mu_t = mu(K_ts.transpose(), alpha)
+            V = np.linalg.lstsq(self.L, K_ts, rcond=None)[0]
+            mu_t = mu(K_ts.transpose(), self.alpha)
             C_t = K_tt - np.dot(V.transpose(), V) + self.lik*np.identity(K_tt.shape[0])
             L_adapt = jitChol(C_t)
             alpha_adapt = linalg.cho_solve((L_adapt, True), y_a_patient - mu_t)
@@ -112,7 +146,7 @@ class personalizedGP(baseGP):
             # V_adapt
             K_t_star = K_t_star_all[:i, i:i+1]
             K_ts_star = K_ts_star_all[:, i:i+1]
-            V_star = np.linalg.lstsq(L, K_ts_star, rcond=None)[0]
+            V_star = np.linalg.lstsq(self.L, K_ts_star, rcond=None)[0]
             V_dot = np.dot(V_star.transpose(), V)
             C_t_star = K_t_star - V_dot.transpose() 
             V_adapt = np.linalg.lstsq(L_adapt, C_t_star, rcond=None)[0]
@@ -126,12 +160,42 @@ class personalizedGP(baseGP):
         return m_adapt, s_adapt 
 
 class targetGP(baseGP):
-    def __init__(self, X_tr, Y_tr, kernel, GP=None, **kwargs):
-        super().__init__(X_tr, Y_tr, kernel=kernel, GP=GP)
+    def __init__(self, X, Y, kernel, sGP=None, **kwargs):
+        super().__init__(X, Y, kernel)
 
-    def predict(self, X_t, Y_t, X_te, sGP_predictions=None, **kwargs):
-        """ Trains and predicts on targetGP """ 
+        self.sGP = sGP 
 
+    def train(self, X_tr, Y_tr, X_t, Y_t, new_patient=True, **kwargs): 
+        """ 
+        Trains targetGP  
+
+        PARAMETERS
+        X_tr: array of training data features 
+        Y_tr: array of training data labels 
+        X_t: array of target data features 
+        Y_t: array of target data labels 
+        """
+        baseGP.train(self, X_tr, Y_tr, self.sGP) # trains sGP if necessary 
+
+        self.X_tr = X_tr if new_patient else np.vstack((self.X_tr, X_tr))
+        self.Y_tr = Y_tr if new_patient else np.vstack((self.Y_tr, Y_tr))
+
+        self.X_t = X_t if new_patient else np.vstack((self.X_t, X_t))
+        self.Y_t = Y_t if new_patient else np.vstack((self.Y_t, Y_t)) 
+
+        self.K_s_all = self._baseGP__K(self.X_t) 
+
+        return None 
+
+    def predict(self, X_te, sGP_predictions=None, v1=1, **kwargs):
+        """ 
+        Predicts on targetGP  
+        
+        PARAMETERS 
+        X_te: array of testing data features 
+        sGP_predictions: tuple of sGP mean and variance predictions 
+        v1: int indicating visit to start predicting from 
+        """ 
         if sGP_predictions is None: 
             m_s, s_s = self.sourceGP.predict_y(X_te)
         else:
@@ -139,17 +203,17 @@ class targetGP(baseGP):
 
         m_target, s_target = None, None
 
-        K_ts_star_all = self._baseGP__K(X_t, X_te) 
+        K_ts_star_all = self._baseGP__K(self.X_t, X_te) 
         k_star_star_all = self._baseGP__Kdiag(X_te) 
-        K_s_all = self._baseGP__K(X_t)
 
-        for i in range(1, len(X_t) + 1): 
+        start = v1 if v1 == 1 else v1-1 
+        for i in range(start, len(self.X_t) + 1): 
 
             if i == 1:
                 m_target = m_s[0:1, :]
                 s_target = s_s[0:1, 0:1]
             
-            y_a_patient = Y_t[0:i] # target data for subject
+            y_a_patient = self.Y_t[0:i] # target data for subject
 
             # Calculation of target mean and variance 
             # K_ts_star 
@@ -159,7 +223,7 @@ class targetGP(baseGP):
             k_star_star = np.array([k_star_star_all[0][i]])
 
             # V_star
-            K_s = K_s_all[:i, :i]
+            K_s = self.K_s_all[:i, :i]
             L_arg = K_s + self.lik*np.identity(K_s.shape[0])
             L = jitChol(L_arg)
             V_star = np.linalg.lstsq(L, K_ts_star, rcond=None)[0]

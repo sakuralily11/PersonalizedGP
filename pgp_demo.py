@@ -46,9 +46,9 @@ for i in range(10):
 
     ## Personalized GP & Target GP 
     # Create personalizedGP & targetGP instance 
-    pGP = personalizedGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k, GP=sGP)
-    tGP = targetGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k, GP=sGP)
-    # Train and predict  
+    pGP = personalizedGP(X=X, Y=Y, kernel=k)
+    tGP = targetGP(X=X, Y=Y, kernel=k)
+    # Train and predict 
     m_ad, s_ad = None, None 
     m_t, s_t = None, None 
     for te in te_IDs: 
@@ -60,8 +60,11 @@ for i in range(10):
 
         sGP_patient_predictions = sGP.predict_y(X_te_patient)
 
-        m_ad_patient, s_ad_patient = pGP.predict(X_ad=X_ad_patient, Y_ad=Y_ad_patient, X_te=X_te_patient, sGP_predictions=sGP_patient_predictions)
-        m_t_patient, s_t_patient = tGP.predict(X_t=X_ad_patient, Y_t=Y_ad_patient, X_te=X_te_patient, sGP_predictions=sGP_patient_predictions)
+        pGP.train(X_tr=X_tr, Y_tr=Y_tr, X_ad=X_ad_patient, Y_ad=Y_ad_patient, new_patient=True)
+        tGP.train(X_tr=X_tr, Y_tr=Y_tr, X_t=X_ad_patient, Y_t=Y_ad_patient, new_patient=True)
+
+        m_ad_patient, s_ad_patient = pGP.predict(X_te=X_te_patient, sGP_predictions=sGP_patient_predictions, v1=1)
+        m_t_patient, s_t_patient = tGP.predict(X_te=X_te_patient, sGP_predictions=sGP_patient_predictions, v1=1)
 
         m_ad = m_ad_patient if m_ad is None else np.vstack((m_ad, m_ad_patient))
         s_ad = s_ad_patient if s_ad is None else np.vstack((s_ad, s_ad_patient))
