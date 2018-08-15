@@ -50,7 +50,7 @@ pGP+tGP computes the geometric mean of the results outputted by pGP and tGP. Thi
 
 PersonalizedGP allows for prediction of mean and variance based on source, target, and personalized models upon building, training, and optimization of a source model with GPflow. Both the input feature vector and output labels can be multi-dimensional. 
 
-For example, a simple personalized Gaussian process model can be built, compiled, and trained in just a few lines of code: 
+For example, a simple personalized Gaussian process model can be built and trained in just a few lines of code: 
 
 ```
 from data.data_generator import * 
