@@ -79,9 +79,9 @@ for i in range(10):
 
     # Create RBF kernel and GP model instance 
     k = gpflow.kernels.RBF(input_dim=X_tr.shape[1])
-    pGP = personalizedGP(X_tr=X_tr, Y_tr=Y_tr, kernel=k)
+    pGP = personalizedGP(X=X, Y=Y, kernel=k)
 
-    # Predict on test patient 
+    # Train and predict on test patient 
     for te in te_IDs: 
         te_rows = np.where(ID_te == te)[0] 
 
@@ -89,8 +89,8 @@ for i in range(10):
         Y_ad_patient = Y_te[te_rows][:-1, :]
         X_te_patient = X_te[te_rows]
 
-        m_ad_patient, s_ad_patient = pGP.predict(X_ad=X_ad_patient, Y_ad=Y_ad_patient, X_te=X_te_patient)
-
+        pGP.train(X_tr=X_tr, Y_tr=Y_tr, X_ad=X_ad_patient, Y_ad=Y_ad_patient, new_patient=True)
+        m_ad_patient, s_ad_patient = pGP.predict(X_te=X_te_patient)
 ```
 
 ### Installation 
