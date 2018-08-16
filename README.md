@@ -2,7 +2,7 @@
 
 PersonalizedGP is a package for building personalized Gaussian process (GP) models in python. The package is built upon the GPflow library, which implements Gaussian process models using TensorFlow. 
 
-This package uses a modified radial basis function kernel as the learning algorithm. 
+This package uses a radial basis function kernel as the learning algorithm. 
 
 At its core, PersonalizedGP applies the following formula to data points to observe their similarities: <a href="https://www.codecogs.com/eqnedit.php?latex=\dpi{110}&space;\lambda&space;e^{-\frac{(x-x')^2}{2\sigma&space;}}" target="_blank"><img src="https://latex.codecogs.com/gif.latex?\dpi{110}&space;\lambda&space;e^{-\frac{(x-x')^2}{2\sigma&space;}}" title="\lambda e^{-\frac{(x-x')^2}{2\sigma }}" /></a>
 
